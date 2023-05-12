@@ -1,0 +1,16 @@
+description: >
+  Using govulners to scan vulnerabilities in a given image
+usage:
+  version: 2.1
+  orbs:
+    govulners: nextlinux/govulners@dev:alpha
+  jobs:
+    list-container-vulnerabilities:
+      executor: govulners/default
+      steps:
+        - nextlinux/list-image-vulns:
+            image-name: "alpine:latest"
+  workflows:
+    scan-my-image:
+      jobs:
+        - list-container-vulnerabilities
