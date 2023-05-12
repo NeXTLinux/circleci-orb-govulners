@@ -1,0 +1,83 @@
+filter_release_semver_tags: &filter_release_semver_tags
+  branches:
+    ignore: /.*/
+  tags:
+    only: /^(major|minor|patch)-release-v\d+\.\d+\.\d+$/
+
+version: 2.1
+
+orbs:
+  govulners: nextlinux/govulners@<<pipeline.parameters.dev-orb-version>>
+  orb-tools: circleci/orb-tools@10.0
+  bats: circleci/bats@1.0
+  shellcheck: circleci/shellcheck@2.0
+
+parameters:
+  run-integration-tests:
+    description: An internal flag to prevent integration test from running before a development version has been created.
+    type: boolean
+    default: false
+  dev-orb-version:
+    description: >
+      The development version of the orb to test.
+      This value is automatically adjusted by the "trigger-integration-tests-workflow" job to correspond with the specific version created by the commit and should not be edited.
+      A "dev:alpha" version must exist for the initial pipeline run.
+    type: string
+    default: "dev:alpha"
+
+workflows:
+  test-pack:
+    unless: << pipeline.parameters.run-integration-tests >>
+    jobs:
+      - orb-tools/lint # Lint Yaml files
+      - orb-tools/pack # Pack orb source
+      - shellcheck/check:
+          dir: ./src/scripts
+          exclude: SC2148
+      - bats/run:
+          path: ./src/tests
+      - orb-tools/publish-dev:
+          orb-name: nextlinux/govulners
+          context: publish_dev_orb # A restricted context containing your private publishing credentials. Will only execute if approved by an authorized user.
+          requires:
+            - orb-tools/lint
+            - orb-tools/pack
+            - bats/run
+            - shellcheck/check
+      - orb-tools/trigger-integration-tests-workflow:
+          name: trigger-integration-dev
+          context: publish_dev_orb
+          requires:
+            - orb-tools/publish-dev
+
+  integration-tests:
+    when: << pipeline.parameters.run-integration-tests >>
+    jobs:
+      - govulners/list-image-vulns:
+          image-name: ubuntu:20.04
+      - govulners/list-dir-vulns:
+          path-to-scan: ./
+
+  publish-prod:
+    unless: << pipeline.parameters.run-integration-tests >>
+    jobs:
+      - govulners/list-image-vulns:
+          filters: *filter_release_semver_tags
+          image-name: ubuntu:20.04
+      - govulners/list-dir-vulns:
+          filters: *filter_release_semver_tags
+          path-to-scan: ./
+      - hold-for-approval:
+          filters: *filter_release_semver_tags
+          type: approval
+          requires:
+            - govulners/list-image-vulns
+            - govulners/list-dir-vulns
+      - orb-tools/dev-promote-prod-from-git-tag:
+          filters: *filter_release_semver_tags
+          add-pr-comment: false
+          required-branch: main
+          orb-name: nextlinux/govulners
+          context: publish_prod_orb
+          requires:
+            - hold-for-approval
