@@ -1,0 +1,16 @@
+description: >
+  Using govulners to scan vulnerabilities in directory
+usage:
+  version: 2.1
+  orbs:
+    govulners: nextlinux/govulners@dev:alpha
+  jobs:
+    list-directory-vulnerabilities:
+      executor: govulners/default
+      steps:
+        - govulners/list-dir-vulns:
+            path-to-scan: ./project/path
+  workflows:
+    scan-my-directory:
+      jobs:
+        - list-directory-vulnerabilities
